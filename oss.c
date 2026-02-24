@@ -50,12 +50,10 @@ int main(int argc, char *argv[]) {
     if (t <= 0) t = 1.0f;
     if (i <= 0) i = 0.0f;
     if (s > n) s = n; //we cannot have more simul processes than total processes  
-    
+    const int NANOPERSEC = 1000000000; //1 billion nanoseconds in a second
+    const int INCREMENTNANO = 10000000; //10ms in nanoseconds;
+
     key_t shm_key = ftok("oss.c", 0);
-    //int shm_key changed to key_t 
-    //to match the return type of ftok, 
-    //and avoid compiler warning about 
-    //comparison between signed and unsigned integers
     if (shm_key == (key_t)-1) {
 		fprintf(stderr,"OSC:... Error in ftok\n"); 
         exit(1);
@@ -85,61 +83,88 @@ int main(int argc, char *argv[]) {
 
     //day 4:need to pass two arguments to worker, seconds and nanoseconds, respectively. 
     int intervalSec = (int)t;
-    int intervalNano = (int)((t - intervalSec) * 1000000000); //billion
+    int intervalNano = (int)((t - intervalSec) * NANOPERSEC); //billion
     if(intervalSec < 0) intervalSec = 0;;
     if(intervalNano < 0) intervalNano = 0;
 
-    pid_t child_pid = fork();
-    if (child_pid == -1) {
-        // fork failed and we clean up before exiting
-		fprintf(stderr,"OSC:... Error in fork\n");
-        shmdt(clock);
-        shmctl(shm_id, IPC_RMID, NULL);
-        exit(1);
+    while (intervalNano >= NANOPERSEC) {
+        intervalSec++; 
+        intervalNano = intervalNano - NANOPERSEC; 
     }
 
-    // launch worker
-    if (child_pid == 0) {
-        // in child
-                // convert intervalSec and intervalNano to strings for exec
-                //The worker takes in two command line arguments, 
-                //this time corresponding to the maximum time it should decide to stay around
-                //in the system. 
-            char secondStr[20], 
-                    nanoStr[20];
-            snprintf(secondStr, sizeof(secondStr), "%d", intervalSec);
-            snprintf(nanoStr, sizeof(nanoStr), "%d", intervalNano);
-            char *args[] = {"./worker", 0};        
-
-            execl("./worker", "worker", secondStr, nanoStr, (char *)NULL);
-    		fprintf(stderr,"Error in exec after fork\n");
-            exit(1);
-    }
-
-    const int INCREMENTNANO = 10000000; //10ms in nanoseconds;
-    //Each iteration in oss you need to increment the clock.
+    int runningChildren = 0;
+    int finishedChildren = 0;
     int status = 0;
-    while(1){
-        //increment clock 10ms
-        *nano = *nano + INCREMENTNANO;;
-        //1 billion nanoseconds = 1 second so we just add 1 to sec and subtract 1 billion
-        if(*nano >= 1000000000){
-            *sec = *sec + 1;
-            *nano = *nano - 1000000000;
+
+
+    for (int launchedChildren = 0; launchedChildren < n; launchedChildren++) {
+        while(runningChildren >= s){
+            *nano = *nano + INCREMENTNANO;;
+            if(*nano >= NANOPERSEC){
+                *sec = *sec + 1;
+                *nano = *nano - NANOPERSEC;
         }
 
-        pid_t childTerminated = waitpid(child_pid, &status, WNOHANG);
-        if(childTerminated == child_pid){
-            //child finished
-            break;
-        } else if (childTerminated == -1){
-            //error in waitpid. we should clean up and exit
+            pid_t childTerminated = waitpid(-1, &status, WNOHANG);
+            if(childTerminated > 0){
+                runningChildren--;
+                finishedChildren++;
+            } else if (childTerminated == 0){
+                //no child has terminated, we can continue to increment time and check again
+            } else if (childTerminated == -1){
+                fprintf(stderr,"OSS: Error in waitpid\n");
+                shmdt(clock);
+                shmctl(shm_id, IPC_RMID, NULL);
+                exit(1);
+                }
+            }
+
+            //launch new child 
+
+            pid_t pid = fork();
+            if(pid == -1){
+                fprintf(stderr,"OSS:... Error in fork\n");
+                shmdt(clock);
+                shmctl(shm_id, IPC_RMID, NULL);
+                exit(1);
+            }
+
+            if (pid == 0){
+                char secondStr[20], 
+                        nanoStr[20];
+                snprintf(secondStr, sizeof(secondStr), "%d", intervalSec);
+                snprintf(nanoStr, sizeof(nanoStr), "%d", intervalNano);    
+                execl("./worker", "worker", secondStr, nanoStr, (char *)NULL);
+                fprintf(stderr,"OSS: Error in exec after fork\n");
+                exit(1);
+            }
+            runningChildren++;;
+        }
+
+        while (finishedChildren < n){
+            *nano = *nano + INCREMENTNANO;
+            if(*nano >= NANOPERSEC){
+                *sec = *sec + 1;
+                *nano = *nano - NANOPERSEC;
+        }
+
+        pid_t childrenTerminated = waitpid(-1, &status, WNOHANG);
+        if(childrenTerminated > 0){
+            runningChildren--;
+            finishedChildren++;
+        } else if (childrenTerminated == 0){
+        } else if (childrenTerminated == -1){
             fprintf(stderr,"OSS: Error in waitpid\n");
-            break;
+            shmdt(clock);
+            shmctl(shm_id, IPC_RMID, NULL);
+            exit(1);
         }
     }
+        
+        
 
-    printf("OSS after child: sec=%d nano=%d\n", *sec, *nano);
+        printf("OSS after children: sec=%d nano=%d\n", *sec, *nano);
+        printf("OSS: Summary: Total children: %d, Finished children: %d\n", n, finishedChildren);
 
     shmdt(clock);
     shmctl(shm_id, IPC_RMID, NULL);
