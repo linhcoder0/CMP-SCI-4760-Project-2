@@ -1,8 +1,3 @@
-// Have oss create shared memory with a clock, 
-//then fork off one child and have that child access the shared memory and
-//ensure it works.
-
-//Code to parse options and receive the command parameters
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -53,7 +48,7 @@ int main(int argc, char *argv[]) {
     if (n <= 0) n = 1;
     if (s <= 0) s = 1;
     if (t <= 0) t = 1.0f;
-    if (i <= 0) i = 1.0f;
+    if (i <= 0) i = 0.0f;
     if (s > n) s = n; //we cannot have more simul processes than total processes  
     
     key_t shm_key = ftok("oss.c", 0);
@@ -88,6 +83,12 @@ int main(int argc, char *argv[]) {
     printf("Called with:\n-n %d\n-s %d\n-t %.3f\n-i %.3f\n", n, s, t, i);
     printf("OSS initialized clock: sec=%d nano=%d\n", clock[0], clock[1]);
 
+    //day 4:need to pass two arguments to worker, seconds and nanoseconds, respectively. 
+    int intervalSec = (int)t;
+    int intervalNano = (int)((t - intervalSec) * 1000000000); //billion
+    if(intervalSec < 0) intervalSec = 0;;
+    if(intervalNano < 0) intervalNano = 0;
+
     pid_t child_pid = fork();
     if (child_pid == -1) {
         // fork failed and we clean up before exiting
@@ -100,13 +101,43 @@ int main(int argc, char *argv[]) {
     // launch worker
     if (child_pid == 0) {
         // in child
+                // convert intervalSec and intervalNano to strings for exec
+                //The worker takes in two command line arguments, 
+                //this time corresponding to the maximum time it should decide to stay around
+                //in the system. 
+            char secondStr[20], 
+                    nanoStr[20];
+            snprintf(secondStr, sizeof(secondStr), "%d", intervalSec);
+            snprintf(nanoStr, sizeof(nanoStr), "%d", intervalNano);
             char *args[] = {"./worker", 0};        
-            execlp(args[0], args[0], (char *)0);
+
+            execl("./worker", "worker", secondStr, nanoStr, (char *)NULL);
     		fprintf(stderr,"Error in exec after fork\n");
             exit(1);
     }
 
-    wait(NULL);
+    const int INCREMENTNANO = 10000000; //10ms in nanoseconds;
+    //Each iteration in oss you need to increment the clock.
+    int status = 0;
+    while(1){
+        //increment clock 10ms
+        *nano = *nano + INCREMENTNANO;;
+        //1 billion nanoseconds = 1 second so we just add 1 to sec and subtract 1 billion
+        if(*nano >= 1000000000){
+            *sec = *sec + 1;
+            *nano = *nano - 1000000000;
+        }
+
+        pid_t childTerminated = waitpid(child_pid, &status, WNOHANG);
+        if(childTerminated == child_pid){
+            //child finished
+            break;
+        } else if (childTerminated == -1){
+            //error in waitpid. we should clean up and exit
+            fprintf(stderr,"OSS: Error in waitpid\n");
+            break;
+        }
+    }
 
     printf("OSS after child: sec=%d nano=%d\n", *sec, *nano);
 
