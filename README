@@ -1,0 +1,21 @@
+Name: Andy Linh
+Date: 2/24/2026
+Environment: Linux
+How to compile the project:
+Type ’make’
+Example of how to run the project:
+./oss -n 3 -s 2 
+
+Generative AI used : ChatGPT
+Prompts:
+    Help me understand examples from module 4 
+
+Summary: 
+    It wasn't that useful at first since memmain.c and memchild.c were really useful during the first few steps but then it became useful. 
+
+Generative AI used : GitHub Copilot (?)
+Prompts:
+    I'm not sure I even prompted it ever it just acted like an auto correct? I'm not really experienced with github copilot I'm sorry but I think I used it
+
+https://github.com/linhcoder0/CMP-SCI-4760-Project-2
+

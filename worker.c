@@ -71,11 +71,6 @@ int main(int argc, char *argv[]) {
       termNano = termNano - 1000000000;
     }
 
-    //So what output should the worker send? Upon starting up, it should output the PID, its PPID, the system clock and when it will
-// terminate. This should be in the following format:
-// WORKER PID:6577 PPID:6576
-// SysClockS: 5 SysclockNano: 1000 TermTimeS: 11 TermTimeNano: 500100
-// --Just Starting
     printf("WORKER PID:%d PPID:%d\n", getpid(), getppid());
     printf("SysClockS: %d SysclockNano: %d TermTimeS: %d TermTimeNano: %d\n", *sec, *nano, termSec, termNano);
     printf("--Just Starting\n");
@@ -85,12 +80,7 @@ int main(int argc, char *argv[]) {
     // int lastNano = *nano;
 
   while(1){
-    //The worker will then attach to shared memory and examine our simulated system clock. It will then figure out what time it
-// should terminate by adding up the system clock time and the time passed to it (in our simulated system clock, not actual time).
-// This is when the process should decide to leave the system and terminate
-//     The worker will then go into
-// a loop, constantly checking the system clock to see if this time has passed. If it ever looks at the system clock and sees values
-// over the ones when it should terminate, it should output some information and then terminate
+
     int currentSec = *sec;
     int currentNano = *nano;
     //time pass termination time. print and exit.
